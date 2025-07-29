@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String        @id @default(uuid())
+  firstName         String        @map("first_name")
+  lastName          String        @map("last_name")
+  email             String        @unique
+  username          String        @unique
+  password          String
+  avatar            String?
+  dateJoined        DateTime      @default(now()) @map("date_joined")
+  lastProfileUpdate DateTime      @default(now()) @map("last_profile_update")
+  isDeleted         Boolean       @default(false) @map("is_deleted")
+  preferences       Json?         @default("{}")
+  timezone          String        @default("UTC")
+  
+  // Relations
+  entries       Entry[]
+  sharedByMe    SharedEntry[]     @relation("SharedByUser")
+  sharedWithMe  SharedEntry[]     @relation("SharedWithUser")
+  templates     Template[]
+  
+  @@map("users")
+}
+
+model Entry {
+  id          String   @id @default(uuid())
+  title       String
+  synopsis    String
+  content     String
+  isDeleted   Boolean  @default(false) @map("is_deleted")
+  dateCreated DateTime @default(now()) @map("date_created")
+  lastUpdated DateTime @updatedAt @map("last_updated")
+  
+  // Relations
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  sharedEntries SharedEntry[]
+    
+  @@map("entries")
+}
+
+model SharedEntry {
+  id           String   @id @default(uuid())
+  permission   String   @default("VIEW") // e.g., "VIEW" | "EDIT"
+  sharedAt     DateTime @default(now()) @map("shared_at")
+  
+  // Relations
+  entryId       String   @map("entry_id")
+  entry         Entry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  sharedById   String   @map("shared_by_id")
+  sharedBy     User     @relation("SharedByUser", fields: [sharedById], references: [id])
+  sharedWithId String   @map("shared_with_id")
+  sharedWith   User     @relation("SharedWithUser", fields: [sharedWithId], references: [id])
+  
+  @@map("shared_entries")
+}
+
+model Template {
+  id          String   @id @default(uuid())
+  title       String
+  content     String
+  isDefault   Boolean  @default(false) @map("is_default")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  // Relations
+  userId      String   @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("templates")
+}
