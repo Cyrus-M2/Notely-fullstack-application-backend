@@ -5,17 +5,23 @@ import { body, validationResult } from 'express-validator';
 import { PrismaClient } from '@prisma/client';
 import { authenticateToken } from '../middleware/auth';
 import { AuthenticatedRequest, RegisterData, LoginData, UpdatePasswordData } from '../types';
+import { verifyCaptcha } from '../utils/captcha';
+// import { verifyCaptcha } from '../utils/captcha';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Registering a user
+// Register user
 router.post('/register', [
   body('firstName').trim().notEmpty().withMessage('First name is required'),
   body('lastName').trim().notEmpty().withMessage('Last name is required'),
   body('username').trim().isLength({ min: 3 }).withMessage('Username must be at least 3 characters'),
   body('email').isEmail().withMessage('Valid email is required'),
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('captchaId').notEmpty().withMessage('Captcha ID is required'),
+  body('captchaText').notEmpty().withMessage('Captcha text is required'),
+  body('captchaId').notEmpty().withMessage('Captcha is required'),
+  body('captchaText').notEmpty().withMessage('Captcha text is required')
 ], async (req: express.Request, res: Response): Promise<void> => {
   try {
     const errors = validationResult(req);
@@ -24,9 +30,15 @@ router.post('/register', [
       return;
     }
 
-    const { firstName, lastName, username, email, password }: RegisterData = req.body;
+  const { firstName, lastName, username, email, password, captchaId, captchaText }: RegisterData & { captchaId: string; captchaText: string } = req.body;
 
-    // Checking if user already exists
+    // Verify captcha
+    if (!verifyCaptcha(captchaId, captchaText)) {
+      res.status(400).json({ message: 'Invalid captcha. Please try again.' });
+      return;
+    }
+
+    // Check if user already exists
     const existingUser = await prisma.user.findFirst({
       where: {
         OR: [
@@ -81,7 +93,11 @@ router.post('/register', [
 // Login user
 router.post('/login', [
   body('emailOrUsername').trim().notEmpty().withMessage('Email or username is required'),
-  body('password').notEmpty().withMessage('Password is required')
+  body('password').notEmpty().withMessage('Password is required'),
+  body('captchaId').notEmpty().withMessage('Captcha ID is required'),
+  body('captchaText').notEmpty().withMessage('Captcha text is required'),
+  body('captchaId').notEmpty().withMessage('Captcha is required'),
+  body('captchaText').notEmpty().withMessage('Captcha text is required')
 ], async (req: express.Request, res: Response): Promise<void> => {
   try {
     const errors = validationResult(req);
@@ -90,9 +106,18 @@ router.post('/login', [
       return;
     }
 
-    const { emailOrUsername, password }: LoginData = req.body;
+    const { emailOrUsername, password, captchaId, captchaText }: LoginData & { captchaId: string; captchaText: string } = req.body;
 
-    // Finding user by email or username
+    // Verify captcha
+    console.log('Login attempt - captcha verification:', { captchaId, captchaText });
+    if (!verifyCaptcha(captchaId, captchaText)) {
+      console.log('Captcha verification failed');
+      res.status(400).json({ message: 'Invalid or expired captcha' });
+      return;
+    }
+    console.log('Captcha verification successful');
+
+    // Find user by email or username
     const user = await prisma.user.findFirst({
       where: {
         OR: [
@@ -104,6 +129,7 @@ router.post('/login', [
     });
 
     if (!user) {
+      console.log('User not found:', emailOrUsername);
       res.status(401).json({ message: 'Invalid credentials' });
       return;
     }
@@ -111,11 +137,27 @@ router.post('/login', [
     // Check password
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
+      console.log('Invalid password for user:', emailOrUsername);
       res.status(401).json({ message: 'Invalid credentials' });
       return;
     }
 
-    // Generating JWT token
+    console.log('Password validation successful for user:', emailOrUsername);
+
+    // Generate JWT token
+    // const jwtSecret = process.env.JWT_SECRET;
+    // if (!jwtSecret) {
+    //   console.error('JWT_SECRET not found in environment variables');
+    //   res.status(500).json({ message: 'JWT secret not configured' });
+    //   return;
+    // }
+
+    // const token = jwt.sign(
+    //   { userId: user.id },
+    //   jwtSecret,
+    //   { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+    // );
+
     const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) {
       res.status(500).json({ message: 'JWT secret not configured' });
@@ -125,10 +167,12 @@ router.post('/login', [
     const token = jwt.sign(
       { userId: user.id },
       jwtSecret
-    );
+    );    
 
+    // Return user data (without password)
     const { password: _, ...userWithoutPassword } = user;
 
+    console.log('Login successful, sending response for user:', user.email);
     res.json({
       message: 'Login successful',
       token,
@@ -140,7 +184,7 @@ router.post('/login', [
   }
 });
 
-// Updating password
+// Update password
 router.post('/password', authenticateToken, [
   body('currentPassword').notEmpty().withMessage('Current password is required'),
   body('newPassword').isLength({ min: 6 }).withMessage('New password must be at least 6 characters'),
@@ -161,7 +205,7 @@ router.post('/password', authenticateToken, [
     const { currentPassword, newPassword }: UpdatePasswordData = req.body;
     const userId = req.user!.id;
 
-    // Getting a user with password
+    // Get user with password
     const user = await prisma.user.findUnique({
       where: { id: userId }
     });
@@ -178,7 +222,7 @@ router.post('/password', authenticateToken, [
       return;
     }
 
-    // Hashing new password
+    // Hash new password
     const saltRounds = 12;
     const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
 
@@ -198,7 +242,7 @@ router.post('/password', authenticateToken, [
   }
 });
 
-// Logout - removal of the token 
+// Logout (client-side token removal)
 router.post('/logout', (req: express.Request, res: Response): void => {
   res.json({ message: 'Logout successful' });
 });
