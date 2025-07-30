@@ -40,15 +40,24 @@ const limiter = rateLimit({
   max: 100,
   message: 'Too many requests from this IP, please try again later.'
 });
+
 app.use(limiter);
 
 // CORS configuration
 app.use(cors({
-  origin: [
+  // origin: [
+  //   'http://localhost:5173',
+  //   'http://127.0.0.1:5173',
+  //   process.env.FRONTEND_URL || 'http://localhost:5173'
+  // ],
+    origin: [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
-    process.env.FRONTEND_URL || 'http://localhost:5173'
+    process.env.FRONTEND_URL || 'http://localhost:5173',
+    'https://notely-fullstack-application.vercel.app',
+    /https:\/\/.*\.vercel\.app$/
   ],
+  
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
